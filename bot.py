@@ -76,22 +76,22 @@ async def calc_elo(w,l,res,reg):
     con = sqlite3.connect(DB)
     cur = con.cursor()
     try:
-        cur.execute("SELECT rating FROM players where name = ?",(str(w),))
+        cur.execute("SELECT rating,wins FROM players where name = ?",(str(w),))
         wr = cur.fetchone()
         if wr is None:
-            cur.execute("INSERT INTO players (name,rating,region) VALUES (?,?,?)",(str(w),int(BASE_RATING),str(reg)))
+            cur.execute("INSERT INTO players (name,rating,region,wins,losses) VALUES (?,?,?,0,0)",(str(w),int(BASE_RATING),str(reg)))
             con.commit()
-            wr = (BASE_RATING,)
-        cur.execute("SELECT rating FROM players where name=?",(str(l),))
+            wr = (BASE_RATING,0)
+        cur.execute("SELECT rating,wins FROM players where name=?",(str(l),))
         lr = cur.fetchone()
         if lr is None:
-            cur.execute("INSERT INTO players (name,rating,region) VALUES (?,?,?)",(str(l),int(BASE_RATING),str(reg)))
+            cur.execute("INSERT INTO players (name,rating,region,wins,losses) VALUES (?,?,?,0,0)",(str(l),int(BASE_RATING),str(reg)))
             con.commit()
-            lr = (BASE_RATING,)
+            lr = (BASE_RATING,0)
         ew = expected(wr[0],lr[0])
         nw,nl = calc(ew,res,wr[0],lr[0])
-        cur.execute("UPDATE players SET rating=? WHERE name=?",(nw,w))
-        cur.execute("UPDATE players SET rating=? WHERE name=?",(nl,l))
+        cur.execute("UPDATE players SET rating=?,wins=? WHERE name=?",(nw,w,wr[1]+1))
+        cur.execute("UPDATE players SET rating=?,losses=? WHERE name=?",(nl,l,lr[1]+1))
         con.commit()
         con.close()
         return 0
@@ -159,14 +159,14 @@ async def report_results(user,w,l):
         con.close()
         return -1,
 
-def get_rankings():
+def get_rankings(region=None, limit=20):
     con = sqlite3.connect(DB)
     cur = con.cursor()
     try:
-        #if player is not None:
-        #    cur.execute(f"SELECT ROW_NUMBER () OVER ( ORDER BY rating DESC ) RowNum,rating,name,region FROM players WHERE name=?",(str(player),))
-        #else:   
-        cur.execute("SELECT ROW_NUMBER () OVER ( ORDER BY rating DESC ) RowNum,rating,name,region FROM players LIMIT 20")
+        if region is not None:
+            cur.execute(f"SELECT ROW_NUMBER () OVER ( ORDER BY rating DESC ) RowNum,rating,name,region,wins,losses FROM players WHERE name=?",(str(region),))
+        else:   
+            cur.execute("SELECT ROW_NUMBER () OVER ( ORDER BY rating DESC ) RowNum,rating,name,region,wins,losses FROM players LIMIT ?",(limit,))
         rank = cur.fetchall()
         return rank
     except Exception as e:
@@ -200,23 +200,41 @@ async def join(inter,match=None):
 #@inter_client.slash_command(description="Accept an issued challenge")
 #async def accept(inter):
 #    accept_challenge(inter.author)
+@inter_client.slash_command(description="View")
+async def view(inter):
+    pass
 
-@inter_client.slash_command(description="View rankings",options=[Option("player","Enter which player's ranking to see",OptionType.USER)])
-async def view_rankings(inter, player=None):
-    rank=get_rankings()
+@view.sub_command(description="View rankings",options=[Option("region","Enter which region's ranking to see",OptionType.STRING),Option("limit","Enter how many player's ranking to see",OptionType.INTEGER)])
+async def rankings(inter, region=None, limit=20):
+    rank=get_rankings(region=region,limit=limit)
     emb = None
-    desc = ""
     if rank is not None:
-        if player is None:
-            for pos in rank:
-                desc += f"{pos[0]}     |   {pos[1]}        |   {pos[2]}        |   {pos[3]}\n"
-        else:
-            for pos in rank:
-                if pos[2] == str(player):
-                    desc += f"{pos[0]}     |   {pos[1]}        |   {pos[2]}        |   {pos[3]}\n"
+        desc = "Rank|Rating|ID|Region|Winrate"
+        for pos in rank:
+            winrate=100*pos[4]/(pos[4]+pos[5])
+            desc += f"{pos[0]}     |   {pos[1]}        |   {pos[2]}        |   {pos[3]}     |   {winrate}\n"
         emb = discord.Embed(title=f"Rankings",description=desc,color=discord.Color.default())
         await inter.reply(embed=emb)
+    else:
+        await inter.reply("No ranked players found")
 
+@view.sub_command(description="View player stats",options=[Option("user","Enter which player's ranking to see",OptionType.USER,required=True)])
+async def player(inter, user):
+    rank=get_rankings()
+    if rank is not None:
+        desc = ""
+        for pos in rank:
+            if pos[2] == str(user):
+                winrate=100*pos[4]/(pos[4]+pos[5])
+                desc = "Rank|Rating|ID|Region|Winrate|Wins-Losses\n"
+                desc += f"{pos[0]}     |   {pos[1]}        |   {pos[2]}        |   {pos[3]}     |   {winrate}   |   {pos[4]}-{pos[5]}\n"
+        if desc == "":
+            await inter.reply("No player with that name found")
+        else:
+            emb = discord.Embed(title=f"Player statistics for {user}",description=desc,color=discord.Color.default())
+            await inter.reply(embed=emb)
+    else:
+        await inter.reply("No ranked players found")
 
 @inter_client.slash_command(description="Report match results",options=[Option("result","Enter the number of your won and loss games w-l",OptionType.STRING,required=True)])
 async def report(inter,result=None):

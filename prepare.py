@@ -26,7 +26,7 @@ try:
 except Exception as e:
     print(e)
 try:
-    cur.execute("CREATE TABLE players (name text, rating int, region text)")
+    cur.execute("CREATE TABLE players (name text, rating int, region text, wins int, losses int)")
 except Exception as e:
     print(e)
 try:
