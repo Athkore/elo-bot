@@ -35,10 +35,11 @@ class view(commands.Cog):
     @view.sub_command(description="View rankings",options=[
         Option("region","Enter which region's ranking to see",OptionType.STRING),
         Option("limit","Enter how many player's ranking to see",OptionType.INTEGER,
-        choices=[
-            OptionChoice("Europe","EU"),
-            OptionChoice("North America","NA")]
-        )])
+            choices=[
+                OptionChoice("Europe","EU"),
+                OptionChoice("North America","NA")
+            ])
+        ])
     async def rankings(self,inter,region=None,limit=20):
         rank=self.get_rankings(region=region,limit=limit)
         emb = None
